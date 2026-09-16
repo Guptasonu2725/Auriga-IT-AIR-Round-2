@@ -14,23 +14,26 @@ const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.
 const validEmail = (value) => typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 const error = (message, status = 400) => Object.assign(new Error(message), { status });
 const equipmentSelect = () => {
-  const currentDate = today();
-  return `SELECT e.*, COUNT(u.id) AS total_units, SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM borrowings current_b WHERE current_b.equipment_unit_id = u.id AND current_b.status = 'ACTIVE' AND current_b.borrow_date <= '${currentDate}' AND current_b.due_date >= '${currentDate}') THEN 1 ELSE 0 END) AS available_units FROM equipment e LEFT JOIN equipment_units u ON u.equipment_id = e.id`;
+  return `SELECT e.*, COUNT(u.id) AS total_units, COALESCE(SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM borrowings current_b WHERE current_b.equipment_unit_id = u.id AND current_b.status = 'ACTIVE' AND current_b.borrow_date <= ? AND current_b.due_date >= ?) THEN 1 ELSE 0 END), 0) AS available_units FROM equipment e LEFT JOIN equipment_units u ON u.equipment_id = e.id`;
 };
-const liveUnitStatus = () => `CASE WHEN EXISTS (SELECT 1 FROM borrowings current_b WHERE current_b.equipment_unit_id = u.id AND current_b.status = 'ACTIVE' AND current_b.borrow_date <= '${today()}' AND current_b.due_date >= '${today()}') THEN 'BORROWED' ELSE 'AVAILABLE' END`;
+const liveUnitStatus = () => `CASE WHEN EXISTS (SELECT 1 FROM borrowings current_b WHERE current_b.equipment_unit_id = u.id AND current_b.status = 'ACTIVE' AND current_b.borrow_date <= ? AND current_b.due_date >= ?) THEN 'BORROWED' ELSE 'AVAILABLE' END`;
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 app.get('/api/settings', (_req, res) => res.json({ maxActiveBorrowings: MAX_ACTIVE_BORROWINGS }));
 
 app.get('/api/equipment', (_req, res) => {
-  const rows = db.prepare(`${equipmentSelect()} GROUP BY e.id ORDER BY e.name`).all();
+  const currentDate = today();
+  const rows = db.prepare(`${equipmentSelect()} GROUP BY e.id ORDER BY e.name`).all(currentDate, currentDate);
   res.json(rows);
 });
 app.get('/api/equipment/:id', (req, res, next) => {
   try {
-    const item = db.prepare(`${equipmentSelect()} WHERE e.id = ? GROUP BY e.id`).get(Number(req.params.id));
+    const equipmentId = Number(req.params.id);
+    if (!Number.isInteger(equipmentId)) throw error('Invalid equipment ID');
+    const currentDate = today();
+    const item = db.prepare(`${equipmentSelect()} WHERE e.id = ? GROUP BY e.id`).get(currentDate, currentDate, equipmentId);
     if (!item) throw error('Equipment not found', 404);
-    item.units = db.prepare(`SELECT id, equipment_id, unit_code, ${liveUnitStatus()} AS status FROM equipment_units u WHERE equipment_id = ? ORDER BY unit_code`).all(item.id);
+    item.units = db.prepare(`SELECT id, equipment_id, unit_code, ${liveUnitStatus()} AS status FROM equipment_units u WHERE equipment_id = ? ORDER BY unit_code`).all(currentDate, currentDate, item.id);
     res.json(item);
   } catch (err) { next(err); }
 });

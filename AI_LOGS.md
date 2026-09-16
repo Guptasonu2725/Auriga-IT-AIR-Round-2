@@ -145,6 +145,14 @@ The frontend production build has also passed after the final feature and docume
 - Added acceptance coverage for malformed email, future bookings not changing current availability, and transfer rejection at the borrower limit.
 - Final regression suite result: 8 tests passed.
 
+## Entry 13 - Backend query hygiene and edge cases
+
+- Replaced server-clock date interpolation in live equipment status SQL with bound query parameters.
+- Added an explicit invalid equipment-ID validation response for `/api/equipment/:id`.
+- Wrapped live availability aggregation with `COALESCE` so equipment with zero physical units reports `0` instead of `null`.
+- Added acceptance coverage for malformed equipment IDs.
+- Re-ran the eight-test backend suite and frontend production build successfully.
+
 ## Future log entries
 
 Append future work using this format:

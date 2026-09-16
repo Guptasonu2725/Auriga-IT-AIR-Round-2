@@ -31,6 +31,9 @@ test('API health and seeded equipment are available', async () => {
   const equipment = await request('/equipment');
   assert.equal(equipment.response.status, 200);
   assert.equal(equipment.body.some((item) => item.id === equipmentId), true);
+  const invalidEquipment = await request('/equipment/not-an-id');
+  assert.equal(invalidEquipment.response.status, 400);
+  assert.match(invalidEquipment.body.error, /invalid equipment id/i);
 });
 
 test('rejects malformed borrower email', async () => {
