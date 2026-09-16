@@ -1260,6 +1260,30 @@ td small {
   border-radius: 4px;
   font-size: 11px;
 }
+.row-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.transfer-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 9px;
+  border: 1px solid #d9dfe4;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 11px;
+}
+.transfer-button:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.transfer-modal-icon {
+  color: var(--blue);
+  background: #e4f2f1;
+}
 .refund-text {
   color: var(--green);
   font-size: 11px;

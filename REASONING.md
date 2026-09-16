@@ -38,6 +38,8 @@ Checkout validates IDs, dates, borrower limit, and an available unit. It inserts
 
 Return validates that the record is active and that the date is not before checkout. It computes `lateDays = max(0, returnDate - dueDate)`, then multiplies by the equipment rate copied into the query. The refundable amount is `max(0, deposit - lateFee)`, and an amount above the deposit becomes `outstanding_amount`. Return and unit release happen transactionally, preventing a partially updated register.
 
+An operator can transfer an active borrowing to another existing borrower. The transfer transaction updates only `borrower_id`; it deliberately does not touch `equipment_unit_id`, `borrow_date`, `due_date`, deposit, or unit status. The recipient is checked against the same three-active-item limit, and returned loans cannot be transferred.
+
 ## Edge cases handled
 
 Invalid IDs, missing required fields, malformed dates, backwards date ranges, unavailable units, overlapping bookings, the three-item limit, duplicate returns, early/on-time returns, late returns, and late fees larger than deposits all return clear errors or bounded financial values. Database constraint failures are converted into useful API responses where relevant.

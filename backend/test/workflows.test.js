@@ -13,11 +13,13 @@ const request = async (path, options) => {
 
 const uniqueEmail = `acceptance-${Date.now()}@college.edu`;
 let borrower;
+let transferTarget;
 const equipmentId = 4;
+const testYear = 2500 + (Date.now() % 300);
 const dates = [
-  ['2200-01-01', '2200-01-03'],
-  ['2200-01-04', '2200-01-06'],
-  ['2200-01-07', '2200-01-09'],
+  [`${testYear}-01-01`, `${testYear}-01-03`],
+  [`${testYear}-01-04`, `${testYear}-01-06`],
+  [`${testYear}-01-07`, `${testYear}-01-09`],
 ];
 const borrowings = [];
 
@@ -37,10 +39,16 @@ test('creates a borrower and reports date-range availability', async () => {
   });
   assert.equal(created.response.status, 201);
   borrower = created.body;
-  const availability = await request(`/equipment/${equipmentId}/availability?startDate=2200-01-01&endDate=2200-01-09`);
+  const availability = await request(`/equipment/${equipmentId}/availability?startDate=${testYear}-01-01&endDate=${testYear}-01-09`);
   assert.equal(availability.response.status, 200);
   assert.equal(availability.body.totalUnits, 3);
   assert.equal(availability.body.availableUnits, 3);
+  const target = await request('/borrowers', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Transfer Target', email: `transfer-${Date.now()}@college.edu`, phone: '+91 91111 11111' }),
+  });
+  assert.equal(target.response.status, 201);
+  transferTarget = target.body;
 });
 
 test('allows three active borrowings and blocks the fourth', async () => {
@@ -54,7 +62,7 @@ test('allows three active borrowings and blocks the fourth', async () => {
   }
   const blocked = await request('/borrowings', {
     method: 'POST',
-    body: JSON.stringify({ borrowerId: borrower.id, equipmentId, borrowDate: '2200-01-10', dueDate: '2200-01-11' }),
+    body: JSON.stringify({ borrowerId: borrower.id, equipmentId, borrowDate: `${testYear}-01-10`, dueDate: `${testYear}-01-11` }),
   });
   assert.equal(blocked.response.status, 400);
   assert.match(blocked.body.error, /limit/i);
@@ -63,7 +71,7 @@ test('allows three active borrowings and blocks the fourth', async () => {
 test('returns an item with a bounded refund and rejects duplicate return', async () => {
   const returned = await request(`/borrowings/${borrowings[0].id}/return`, {
     method: 'POST',
-    body: JSON.stringify({ returnedDate: '2300-01-01' }),
+    body: JSON.stringify({ returnedDate: `${testYear + 1}-01-01` }),
   });
   assert.equal(returned.response.status, 200);
   assert.equal(returned.body.status, 'RETURNED');
@@ -72,8 +80,24 @@ test('returns an item with a bounded refund and rejects duplicate return', async
 
   const duplicate = await request(`/borrowings/${borrowings[0].id}/return`, {
     method: 'POST',
-    body: JSON.stringify({ returnedDate: '2300-01-01' }),
+    body: JSON.stringify({ returnedDate: `${testYear + 1}-01-01` }),
   });
   assert.equal(duplicate.response.status, 400);
   assert.match(duplicate.body.error, /already been returned/i);
+});
+
+test('transfers an active loan without changing its unit or due date', async () => {
+  const original = borrowings[1];
+  const beforeAvailability = await request(`/equipment/4/availability?startDate=${testYear}-01-04&endDate=${testYear}-01-06`);
+  const result = await request(`/borrowings/${original.id}/transfer`, {
+    method: 'POST',
+    body: JSON.stringify({ newBorrowerId: transferTarget.id }),
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.borrower_id, transferTarget.id);
+  assert.equal(result.body.equipment_unit_id, original.equipment_unit_id);
+  assert.equal(result.body.due_date, original.due_date);
+  assert.equal(result.body.status, 'ACTIVE');
+  const afterAvailability = await request(`/equipment/4/availability?startDate=${testYear}-01-04&endDate=${testYear}-01-06`);
+  assert.equal(afterAvailability.body.availableUnits, beforeAvailability.body.availableUnits);
 });

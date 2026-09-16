@@ -92,6 +92,7 @@ Open the Vite URL shown in the terminal, normally `http://localhost:5173`. The A
 | GET | `/api/borrowings` | All borrowings; use `?status=active` to filter |
 | GET | `/api/borrowings/active` | Active borrowings |
 | POST | `/api/borrowings` | Create a borrowing and assign a unit |
+| POST | `/api/borrowings/:id/transfer` | Transfer an active loan to another borrower |
 | POST | `/api/borrowings/:id/return` | Return an item and calculate fees |
 
 ## Business rules
@@ -99,6 +100,8 @@ Open the Vite URL shown in the terminal, normally `http://localhost:5173`. The A
 - A borrower can have at most 3 active borrowings.
 - `due_date` cannot be before `borrow_date`; date ranges must be valid ISO dates.
 - A unit cannot have overlapping active bookings. The first available unit code is assigned.
+- An active loan can be transferred to another borrower by an operator; the unit, dates, deposit, and status remain unchanged.
+- The transfer target must exist, be different from the current borrower, and have fewer than 3 active borrowings.
 - Deposit and late-fee rates are copied onto the borrowing at checkout.
 - `lateDays = max(0, returnDate - dueDate)` and `lateFee = lateDays × lateFeePerDay`.
 - `refund = max(0, deposit - lateFee)`; any excess is recorded as `outstanding_amount`.

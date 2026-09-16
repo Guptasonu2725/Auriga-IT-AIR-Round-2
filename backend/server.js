@@ -83,6 +83,27 @@ app.post('/api/borrowings', (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+app.post('/api/borrowings/:id/transfer', (req, res, next) => {
+  try {
+    const borrowingId = Number(req.params.id);
+    const newBorrowerId = Number(req.body.newBorrowerId);
+    if (!Number.isInteger(borrowingId) || !Number.isInteger(newBorrowerId)) throw error('Valid borrowing and borrower IDs are required');
+    const borrowing = db.prepare(`${borrowingQuery} WHERE b.id = ?`).get(borrowingId);
+    if (!borrowing) throw error('Borrowing not found', 404);
+    if (borrowing.status !== 'ACTIVE') throw error('Only active borrowings can be transferred');
+    if (borrowing.borrower_id === newBorrowerId) throw error('The new borrower must be different from the current borrower');
+    const newBorrower = db.prepare('SELECT * FROM borrowers WHERE id = ?').get(newBorrowerId);
+    if (!newBorrower) throw error('New borrower not found', 404);
+    const activeCount = db.prepare("SELECT COUNT(*) AS count FROM borrowings WHERE borrower_id = ? AND status = 'ACTIVE'").get(newBorrowerId).count;
+    if (activeCount >= MAX_ACTIVE_BORROWINGS) throw error(`Transfer would exceed the ${MAX_ACTIVE_BORROWINGS}-item borrowing limit`);
+    const transferred = db.transaction(() => {
+      db.prepare("UPDATE borrowings SET borrower_id = ? WHERE id = ? AND status = 'ACTIVE'").run(newBorrowerId, borrowingId);
+      return db.prepare(`${borrowingQuery} WHERE b.id = ?`).get(borrowingId);
+    })();
+    res.json(transferred);
+  } catch (err) { next(err); }
+});
+
 app.post('/api/borrowings/:id/return', (req, res, next) => {
   try {
     const borrowing = db.prepare(`${borrowingQuery} WHERE b.id = ?`).get(Number(req.params.id));

@@ -255,6 +255,7 @@ function App() {
           {page === "borrowings" && (
             <Borrowings
               loans={borrowings}
+              borrowers={borrowers}
               onDone={(message) => {
                 setNotice({ type: "success", text: message });
                 refresh();
@@ -906,9 +907,10 @@ function Borrow({ equipment, borrowers, onDone }) {
     </>
   );
 }
-function Borrowings({ loans, onDone }) {
+function Borrowings({ loans, borrowers, onDone }) {
   const [filter, setFilter] = useState("ACTIVE");
   const [returning, setReturning] = useState(null);
+  const [transferring, setTransferring] = useState(null);
   const shown = loans.filter(
     (loan) => filter === "ALL" || loan.status === filter,
   );
@@ -989,12 +991,14 @@ function Borrowings({ loans, onDone }) {
                     </td>
                     <td>
                       {loan.status === "ACTIVE" && (
-                        <button
-                          className="return-button"
-                          onClick={() => setReturning(loan)}
-                        >
-                          Return <RotateCcw size={14} />
-                        </button>
+                        <div className="row-actions">
+                          <button className="return-button" onClick={() => setReturning(loan)}>
+                            Return <RotateCcw size={14} />
+                          </button>
+                          <button className="transfer-button" onClick={() => setTransferring(loan)}>
+                            Transfer <ArrowRight size={14} />
+                          </button>
+                        </div>
                       )}
                       {loan.status === "RETURNED" && (
                         <span className="refund-text">
@@ -1024,9 +1028,52 @@ function Borrowings({ loans, onDone }) {
           onDone={onDone}
         />
       )}
+      {transferring && (
+        <TransferModal
+          loan={transferring}
+          borrowers={borrowers}
+          close={() => setTransferring(null)}
+          onDone={onDone}
+        />
+      )}
     </>
   );
 }
+function TransferModal({ loan, borrowers, close, onDone }) {
+  const [newBorrowerId, setNewBorrowerId] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const candidates = borrowers.filter((borrower) => borrower.id !== loan.borrower_id);
+  const submit = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      await api.post(`/borrowings/${loan.id}/transfer`, { newBorrowerId });
+      onDone(`Transferred ${loan.equipment_name} ${loan.unit_code} to the new borrower.`);
+      close();
+    } catch (err) {
+      setError(getError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <div className="modal-backdrop">
+      <div className="modal">
+        <button className="modal-close" onClick={close}><X size={18} /></button>
+        <div className="modal-icon transfer-modal-icon"><ArrowRight size={20} /></div>
+        <div className="eyebrow">Change responsibility</div>
+        <h2>Transfer this loan</h2>
+        <p>{loan.equipment_name} · {loan.unit_code} is currently with {loan.borrower_name} and is due {formatDate(loan.due_date)}.</p>
+        <label>New borrower<select value={newBorrowerId} onChange={(event) => setNewBorrowerId(event.target.value)}><option value="">Choose a borrower</option>{candidates.map((borrower) => <option value={borrower.id} key={borrower.id}>{borrower.name} · {borrower.email}</option>)}</select></label>
+        <div className="return-note"><ShieldCheck size={16} /><span>The unit, booking dates, deposit, and original due date stay unchanged.</span></div>
+        {error && <div className="inline-error">{error}</div>}
+        <button className="button primary full" onClick={submit} disabled={loading || !newBorrowerId}>{loading ? "Transferring…" : "Confirm transfer"}</button>
+      </div>
+    </div>
+  );
+}
+
 function ReturnModal({ loan, close, onDone }) {
   const [date, setDate] = useState(today);
   const [loading, setLoading] = useState(false);
