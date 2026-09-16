@@ -11,21 +11,26 @@ app.use(express.json());
 
 const today = () => new Date().toISOString().slice(0, 10);
 const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
+const validEmail = (value) => typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 const error = (message, status = 400) => Object.assign(new Error(message), { status });
-const equipmentSelect = `SELECT e.*, COUNT(u.id) AS total_units, SUM(CASE WHEN u.status = 'AVAILABLE' THEN 1 ELSE 0 END) AS available_units FROM equipment e LEFT JOIN equipment_units u ON u.equipment_id = e.id`;
+const equipmentSelect = () => {
+  const currentDate = today();
+  return `SELECT e.*, COUNT(u.id) AS total_units, SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM borrowings current_b WHERE current_b.equipment_unit_id = u.id AND current_b.status = 'ACTIVE' AND current_b.borrow_date <= '${currentDate}' AND current_b.due_date >= '${currentDate}') THEN 1 ELSE 0 END) AS available_units FROM equipment e LEFT JOIN equipment_units u ON u.equipment_id = e.id`;
+};
+const liveUnitStatus = () => `CASE WHEN EXISTS (SELECT 1 FROM borrowings current_b WHERE current_b.equipment_unit_id = u.id AND current_b.status = 'ACTIVE' AND current_b.borrow_date <= '${today()}' AND current_b.due_date >= '${today()}') THEN 'BORROWED' ELSE 'AVAILABLE' END`;
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 app.get('/api/settings', (_req, res) => res.json({ maxActiveBorrowings: MAX_ACTIVE_BORROWINGS }));
 
 app.get('/api/equipment', (_req, res) => {
-  const rows = db.prepare(`${equipmentSelect} GROUP BY e.id ORDER BY e.name`).all();
+  const rows = db.prepare(`${equipmentSelect()} GROUP BY e.id ORDER BY e.name`).all();
   res.json(rows);
 });
 app.get('/api/equipment/:id', (req, res, next) => {
   try {
-    const item = db.prepare(`${equipmentSelect} WHERE e.id = ? GROUP BY e.id`).get(Number(req.params.id));
+    const item = db.prepare(`${equipmentSelect()} WHERE e.id = ? GROUP BY e.id`).get(Number(req.params.id));
     if (!item) throw error('Equipment not found', 404);
-    item.units = db.prepare('SELECT * FROM equipment_units WHERE equipment_id = ? ORDER BY unit_code').all(item.id);
+    item.units = db.prepare(`SELECT id, equipment_id, unit_code, ${liveUnitStatus()} AS status FROM equipment_units u WHERE equipment_id = ? ORDER BY unit_code`).all(item.id);
     res.json(item);
   } catch (err) { next(err); }
 });
@@ -49,6 +54,7 @@ app.post('/api/borrowers', (req, res, next) => {
   try {
     const { name, email, phone } = req.body;
     if (!name?.trim() || !email?.trim() || !phone?.trim()) throw error('Name, email, and phone are required');
+    if (!validEmail(email)) throw error('A valid email address is required');
     const result = db.prepare('INSERT INTO borrowers (name, email, phone) VALUES (?, ?, ?)').run(name.trim(), email.trim(), phone.trim());
     res.status(201).json(db.prepare('SELECT * FROM borrowers WHERE id = ?').get(result.lastInsertRowid));
   } catch (err) { next(err.code === 'SQLITE_CONSTRAINT_UNIQUE' ? error('A borrower with this email already exists') : err); }
@@ -126,7 +132,7 @@ app.post('/api/borrowings/:id/return', (req, res, next) => {
 });
 
 app.get('/api/dashboard', (_req, res) => {
-  const totals = db.prepare(`SELECT COUNT(u.id) AS totalUnits, SUM(CASE WHEN u.status = 'AVAILABLE' THEN 1 ELSE 0 END) AS availableUnits, SUM(CASE WHEN u.status = 'BORROWED' THEN 1 ELSE 0 END) AS borrowedUnits FROM equipment_units u`).get();
+  const totals = db.prepare(`SELECT COUNT(u.id) AS totalUnits, SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM borrowings current_b WHERE current_b.equipment_unit_id = u.id AND current_b.status = 'ACTIVE' AND current_b.borrow_date <= ? AND current_b.due_date >= ?) THEN 1 ELSE 0 END) AS availableUnits, SUM(CASE WHEN EXISTS (SELECT 1 FROM borrowings current_b WHERE current_b.equipment_unit_id = u.id AND current_b.status = 'ACTIVE' AND current_b.borrow_date <= ? AND current_b.due_date >= ?) THEN 1 ELSE 0 END) AS borrowedUnits FROM equipment_units u`).get(today(), today(), today(), today());
   const overdue = db.prepare("SELECT COUNT(*) AS count FROM borrowings WHERE status = 'ACTIVE' AND due_date < ?").get(today()).count;
   const recent = db.prepare(`${borrowingQuery} ORDER BY b.id DESC LIMIT 6`).all();
   res.json({ ...totals, overdueBorrowings: overdue, recentActivity: recent });

@@ -233,6 +233,7 @@ function App() {
             <Borrow
               equipment={equipment}
               borrowers={borrowers}
+              onBorrowerCreated={(created) => setBorrowers((current) => [...current, created])}
               onDone={(message) => {
                 setNotice({ type: "success", text: message });
                 refresh();
@@ -425,7 +426,7 @@ function Dashboard({ data, equipment, navigate, refresh, loading, error, retry }
   return (
     <>
       <PageHeader
-        eyebrow="Wednesday · 16 September 2026"
+        eyebrow={new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
         title="Good morning, operator"
         description="Here’s what’s happening in the AV room today."
         action={
@@ -726,7 +727,7 @@ function Availability({ equipment }) {
     </>
   );
 }
-function Borrow({ equipment, borrowers, onDone }) {
+function Borrow({ equipment, borrowers, onDone, onBorrowerCreated }) {
   const [form, setForm] = useState({
     borrowerId: borrowers[0]?.id || "",
     equipmentId: equipment[0]?.id || "",
@@ -758,7 +759,7 @@ function Borrow({ equipment, borrowers, onDone }) {
     setBorrowerLoading(true);
     try {
       const created = (await api.post("/borrowers", newBorrower)).data;
-      borrowers.push(created);
+      onBorrowerCreated(created);
       update("borrowerId", created.id);
       setNewBorrower({ name: "", email: "", phone: "" });
       setShowNewBorrower(false);
@@ -908,8 +909,16 @@ function Borrowings({ loans, borrowers, onDone }) {
   const [filter, setFilter] = useState("ACTIVE");
   const [returning, setReturning] = useState(null);
   const [transferring, setTransferring] = useState(null);
+  const [query, setQuery] = useState("");
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const shown = loans.filter(
-    (loan) => filter === "ALL" || loan.status === filter,
+    (loan) => {
+      const matchesStatus = filter === "ALL" || loan.status === filter;
+      const searchable = `${loan.equipment_name} ${loan.unit_code} ${loan.borrower_name} ${loan.borrower_email}`.toLowerCase();
+      const matchesQuery = searchable.includes(query.toLowerCase().trim());
+      const matchesOverdue = !overdueOnly || (loan.status === "ACTIVE" && loan.due_date < today);
+      return matchesStatus && matchesQuery && matchesOverdue;
+    },
   );
   return (
     <>
@@ -940,6 +949,10 @@ function Borrowings({ loans, borrowers, onDone }) {
           </div>
         }
       />
+      <div className="borrowings-tools">
+        <div className="search-box"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search borrower or equipment" /></div>
+        <button className={overdueOnly ? "filter-button selected" : "filter-button"} onClick={() => setOverdueOnly((current) => !current)}><Clock3 size={15} /> Overdue only</button>
+      </div>
       {shown.length ? (
         <section className="panel table-panel">
           <div className="table-wrap">

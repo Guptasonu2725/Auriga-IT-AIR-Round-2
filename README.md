@@ -19,6 +19,7 @@ The current sign-in and role selector are local demo controls. They provide sepa
 - Unit codes such as `DSLR-001` and `PROJ-002`
 - Equipment category, description, deposit, and late-fee policy
 - Current unit status: `AVAILABLE` or `BORROWED`
+- Live current-status calculations derived from active borrowings
 - Date-range availability across all physical units
 - Overlap prevention for active bookings
 - Interactive dashboard availability summary
@@ -26,6 +27,7 @@ The current sign-in and role selector are local demo controls. They provide sepa
 ### Borrowing and returns
 
 - Borrower creation and selection
+- Borrower email format validation
 - Automatic assignment of the first available unit
 - Borrowing and due-date validation
 - Maximum of three active borrowings per borrower
@@ -51,6 +53,7 @@ An operator can transfer an active loan to another borrower. The original due da
 - Sign-in and sign-out demo flow
 - Browser hash navigation and responsive layouts
 - Loading, retry, empty, validation, success, and error states
+- Borrowing search and overdue-only filtering
 
 ## 3. Technology Stack
 
@@ -65,6 +68,8 @@ An operator can transfer an active loan to another borrower. The original due da
 The frontend is a React single-page application. It calls the backend through Axios using the `/api` path. During development, Vite proxies `/api` requests to `http://localhost:4000`.
 
 The Express backend owns validation, availability logic, borrowing limits, transfer rules, return calculations, and database transactions. The frontend displays backend results and does not act as the source of truth for financial or booking calculations.
+
+Equipment list, equipment detail, and dashboard counts calculate current occupancy from active borrowing date ranges on every read. The stored unit status remains a compatibility/cache field, but it is not trusted for current availability; this prevents future bookings from becoming stale when their start date arrives without a scheduled job.
 
 SQLite is initialized when the backend starts. The schema enables foreign keys and uses constraints and indexes for relationship integrity and common availability queries.
 
@@ -214,6 +219,9 @@ The suite verifies:
 - Three active loans and fourth-loan rejection
 - Late return, refund floor, and outstanding balance
 - Duplicate return rejection
+- Malformed borrower email rejection
+- Future bookings do not reduce current availability counts
+- Transfer rejection when the target borrower is already at the active-loan limit
 - Active-loan transfer with preserved unit, due date, status, and availability
 
 Manual UI scenarios:

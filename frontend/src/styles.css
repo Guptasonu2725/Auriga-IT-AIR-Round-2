@@ -1275,6 +1275,32 @@ nav {
   color: var(--navy);
   font-weight: 700;
 }
+.borrowings-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.borrowings-tools .search-box {
+  flex: 1;
+  max-width: 420px;
+}
+.filter-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+}
+.filter-button.selected {
+  border-color: #e1a69a;
+  background: #fff1ed;
+  color: var(--red);
+}
 .table-panel {
   overflow: hidden;
 }
@@ -1852,6 +1878,13 @@ td small {
   }
   .segmented {
     width: 100%;
+  }
+  .borrowings-tools {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .borrowings-tools .search-box {
+    max-width: none;
   }
   .segmented button {
     flex: 1;

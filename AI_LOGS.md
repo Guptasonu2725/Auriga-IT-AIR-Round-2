@@ -135,6 +135,16 @@ The frontend production build has also passed after the final feature and docume
 - `267f8b9` - Simplify current page breadcrumb
 - `a6cc1d4` - Document final AV room system
 
+## Entry 12 - Final regression fixes
+
+- Replaced equipment list, equipment detail, and dashboard reliance on the cached `equipment_units.status` value with live active-borrowing date-range calculations.
+- Added borrower email-format validation to the backend.
+- Changed borrower creation to use an `onBorrowerCreated` callback and immutable parent state updates instead of mutating a prop array.
+- Replaced the hardcoded dashboard date with a dynamically formatted current date.
+- Added search and overdue-only filtering to the operator Borrowings page.
+- Added acceptance coverage for malformed email, future bookings not changing current availability, and transfer rejection at the borrower limit.
+- Final regression suite result: 8 tests passed.
+
 ## Future log entries
 
 Append future work using this format:

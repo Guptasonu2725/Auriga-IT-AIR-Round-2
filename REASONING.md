@@ -23,6 +23,7 @@ The implementation covers:
 - Operator dashboard and operational borrowing views
 - Student browsing, availability, borrowing, and personal history
 - Clear loading, error, empty, and success states
+- Borrowing search and overdue filtering
 
 The transfer requirement is treated as a mutation of responsibility, not a new booking. The loan remains the same loan and therefore retains its unit, dates, deposit, and status.
 
@@ -48,6 +49,8 @@ The system should be easy to run in GitHub Codespaces, should use a durable loca
 The React client renders operator and student workflows. Axios sends requests to the same-origin `/api` path; Vite proxies that path to the Express backend during development. The server validates IDs, dates, limits, availability, transfer rules, and return calculations before modifying SQLite.
 
 `backend/server.js` contains the REST routes and transaction boundaries. `backend/database/database.js` opens SQLite, enables foreign keys and WAL mode, applies the schema, and seeds initial records. `backend/database/schema.sql` defines the relational tables and constraints. The frontend keeps presentation state, form state, and navigation state but does not decide the authoritative deposit, late-fee, or availability result.
+
+Equipment list, equipment detail, and dashboard counts calculate current occupancy from active borrowing date ranges on every read. The stored unit status remains a compatibility/cache field, but it is not trusted for current availability; this prevents future bookings from becoming stale when their start date arrives without a scheduled job.
 
 ## 6. Database Design
 
@@ -123,13 +126,16 @@ The API handles invalid IDs, missing fields, malformed dates, backwards date ran
 
 ## 13. Test Evidence
 
-The backend acceptance suite is run with `npm test` while the API is available. It currently verifies five workflows:
+The backend acceptance suite is run with `npm test` while the API is available. It currently verifies eight workflows:
 
 1. API health and seeded equipment
-2. Borrower creation and date-range availability
-3. Three-loan limit and fourth-loan rejection
-4. Late return, refund floor, outstanding balance, and duplicate-return rejection
-5. Active-loan transfer with preserved unit, due date, status, and availability
+2. Malformed borrower email rejection
+3. Borrower creation and date-range availability
+4. Future bookings not reducing current availability counts
+5. Three-loan limit and fourth-loan rejection
+6. Transfer rejection when the target is at the three-loan limit
+7. Late return, refund floor, outstanding balance, and duplicate-return rejection
+8. Active-loan transfer with preserved unit, due date, status, and availability
 
 The frontend is validated with `npm run build` and editor diagnostics on the touched source files.
 
