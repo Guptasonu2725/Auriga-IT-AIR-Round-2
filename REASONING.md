@@ -1,49 +1,148 @@
 # Product and Engineering Reasoning
 
-## Interpretation
+## 1. Problem Interpretation
 
-The paper register problem is fundamentally an inventory and scheduling problem, not only a CRUD form. A physical unit is the source of truth for availability; equipment types provide the shared policy values (deposit and late fee). A small operator-facing desk app is sufficient because authentication was explicitly excluded.
+The paper register creates four connected problems: staff cannot identify the physical unit that is out, future bookings can overlap, returns are not enforced, and deposits and late fees are difficult to calculate consistently. The system therefore treats the physical equipment unit as the availability resource and treats the equipment type as the owner of reusable lending policy values.
 
-## Requirements derived
+The product has two audiences. Operators need a control workspace for inventory and loan administration. Students need a simpler self-service portal for discovery, availability, and borrowing. The role selector separates these workflows in the frontend while keeping the backend API shared.
 
-The app needs inventory, unit-level status, borrowers, date-aware bookings, returns, deposits, late fees, limits, dashboard metrics, and useful validation errors. It also needs to remain usable when no records exist, when no unit is available, and when a return is overdue or duplicated.
+## 2. Functional Requirements
 
-## Non-functional requirements
+The implementation covers:
 
-The system should be runnable in Codespaces with two simple processes, use a local durable database, expose predictable REST responses, keep calculations server-side, and work on narrow screens. SQLite is appropriate for a single AV-room desk MVP; foreign keys, constraints, indexes, and transactions protect the important state changes.
+- Equipment types and multiple physical units
+- Unit-level current status and date-range availability
+- Borrower records
+- Borrowing creation and automatic unit assignment
+- Due dates and date validation
+- Deposits copied onto each borrowing
+- Per-day late fees
+- Returns, refund calculation, and outstanding balances
+- A maximum of three active borrowings per borrower
+- Active-loan transfer from one borrower to another
+- Operator dashboard and operational borrowing views
+- Student browsing, availability, borrowing, and personal history
+- Clear loading, error, empty, and success states
 
-## Assumptions
+The transfer requirement is treated as a mutation of responsibility, not a new booking. The loan remains the same loan and therefore retains its unit, dates, deposit, and status.
 
-- `MAX_ACTIVE_BORROWINGS` is 3, matching the requested sensible limit.
-- Dates are calendar dates, not timestamps; the due date is inclusive.
-- A future reservation may use a unit after its current booking ends.
-- The first unit code in alphabetical order is assigned automatically.
-- Deposits are recorded rather than processed through a payment gateway.
-- The operator is trusted; authentication and role management are future concerns.
-- The sample seed data is intentionally modest and classroom-oriented.
+## 3. Non-Functional Requirements
 
-## Architecture and schema
+The system should be easy to run in GitHub Codespaces, should use a durable local database, should keep business calculations on the server, and should provide a responsive interface for desk and student use. The implementation favors a small number of dependable dependencies and a straightforward Express/React boundary over a larger framework.
 
-React renders the operator workflows and calls Axios services. Express validates requests, owns calculations, and uses better-sqlite3 transactions for borrow and return operations. The relational model has `borrowers`, `equipment`, `equipment_units`, and `borrowings`. Borrowings retain the deposit amount and calculated return values so historical records do not change when equipment policy changes.
+## 4. Assumptions
 
-Foreign keys prevent orphaned relationships. `equipment_units.status` is a fast current-state indicator, while active borrowing date ranges are the authoritative overlap check. Indexes support active-unit and date-range queries.
+- The maximum number of active loans is 3, as required by the challenge.
+- Dates represent calendar days rather than timestamps. Due dates are inclusive.
+- An active booking uses a closed date interval for overlap detection.
+- A future non-overlapping booking may reuse a physical unit after an earlier booking ends.
+- The first available unit in unit-code order is assigned automatically.
+- A transfer target must already exist as a borrower.
+- A transfer cannot move a loan to the current borrower and cannot exceed the target's active-loan limit.
+- Deposits are recorded financial values; no payment gateway is assumed.
+- The sign-in screen and role selector are a local demonstration because the original brief explicitly removed authentication from the required scope.
+- The current student portal uses the selected borrower record as the student's identity. Production deployment would replace this with authenticated user-to-borrower mapping.
 
-## Availability logic
+## 5. Architecture
 
-For a requested `[startDate, endDate]`, a unit is available when no active borrowing satisfies `borrow_date <= endDate AND due_date >= startDate`. This is the standard closed-interval overlap test. The API returns both the available count and the available unit codes. The same test runs during checkout so the UI cannot create an overlap by racing or being stale.
+The React client renders operator and student workflows. Axios sends requests to the same-origin `/api` path; Vite proxies that path to the Express backend during development. The server validates IDs, dates, limits, availability, transfer rules, and return calculations before modifying SQLite.
 
-## Borrowing, return, and money logic
+`backend/server.js` contains the REST routes and transaction boundaries. `backend/database/database.js` opens SQLite, enables foreign keys and WAL mode, applies the schema, and seeds initial records. `backend/database/schema.sql` defines the relational tables and constraints. The frontend keeps presentation state, form state, and navigation state but does not decide the authoritative deposit, late-fee, or availability result.
 
-Checkout validates IDs, dates, borrower limit, and an available unit. It inserts the borrowing and marks a currently active unit as borrowed in one transaction. A future booking is allowed to reuse a unit after an earlier booking ends without incorrectly changing its current status.
+## 6. Database Design
 
-Return validates that the record is active and that the date is not before checkout. It computes `lateDays = max(0, returnDate - dueDate)`, then multiplies by the equipment rate copied into the query. The refundable amount is `max(0, deposit - lateFee)`, and an amount above the deposit becomes `outstanding_amount`. Return and unit release happen transactionally, preventing a partially updated register.
+### `borrowers`
 
-An operator can transfer an active borrowing to another existing borrower. The transfer transaction updates only `borrower_id`; it deliberately does not touch `equipment_unit_id`, `borrow_date`, `due_date`, deposit, or unit status. The recipient is checked against the same three-active-item limit, and returned loans cannot be transferred.
+Stores borrower name, email, phone, and creation time. Email is unique case-insensitively.
 
-## Edge cases handled
+### `equipment`
 
-Invalid IDs, missing required fields, malformed dates, backwards date ranges, unavailable units, overlapping bookings, the three-item limit, duplicate returns, early/on-time returns, late returns, and late fees larger than deposits all return clear errors or bounded financial values. Database constraint failures are converted into useful API responses where relevant.
+Stores equipment name, category, description, deposit amount, and late-fee rate.
 
-## Trade-offs and future improvements
+### `equipment_units`
 
-The MVP deliberately has no authentication, payment integration, file uploads, audit log, or background notifications. For a larger deployment, add staff accounts and permissions, an explicit booking state, automated overdue reminders, configurable policy settings, pagination, reporting/export, and a database such as PostgreSQL. A production payment workflow would also need payment-provider reconciliation rather than only recording a refund amount.
+Stores each physical unit, its parent equipment type, unit code, and current status. Unit codes are unique.
+
+### `borrowings`
+
+Stores borrower, physical unit, borrow date, due date, returned date, copied deposit, calculated late fee, refund, outstanding amount, status, and creation time. Historical monetary values remain stable even if an equipment policy changes later.
+
+Foreign keys prevent orphan records. Indexes support active-unit and date-range queries. A database transaction is used for borrowing, return, and transfer mutations.
+
+## 7. Availability Logic
+
+For a requested interval `[startDate, endDate]`, a unit is available when no active borrowing overlaps it. Two intervals overlap when:
+
+```text
+existing.borrow_date <= requested.endDate
+AND existing.due_date >= requested.startDate
+```
+
+The availability endpoint returns the equipment type, requested dates, total unit count, available unit count, and available unit codes. The same overlap query is executed again during checkout so a stale frontend cannot create a conflicting booking.
+
+## 8. Borrowing Logic
+
+Checkout validates the borrower, equipment, dates, active-loan count, and unit availability. It inserts the borrowing with the equipment deposit copied into the record. If the booking covers the current day, the assigned unit is marked `BORROWED`; future bookings do not incorrectly change current status.
+
+The borrowing limit is checked before assignment. A failed request returns a useful client error and does not create a partial record.
+
+## 9. Return and Financial Logic
+
+Return accepts an actual return date and requires the borrowing to be active. The server calculates:
+
+```text
+lateDays = max(0, returnDate - dueDate)
+lateFee = lateDays * lateFeePerDay
+refund = max(0, depositAmount - lateFee)
+outstandingAmount = max(0, lateFee - depositAmount)
+```
+
+The borrowing is marked `RETURNED` and the physical unit is released in the same transaction. A second return is rejected. Early and on-time returns have zero late fee.
+
+## 10. Transfer Logic
+
+The transfer endpoint accepts an active borrowing ID and a new borrower ID. It validates that:
+
+- The borrowing exists.
+- The borrowing is active.
+- The target borrower exists.
+- The target differs from the current borrower.
+- The target has fewer than three active borrowings.
+
+The transaction updates only `borrowings.borrower_id`. It does not update `equipment_unit_id`, `borrow_date`, `due_date`, `deposit_amount`, `status`, or `equipment_units.status`. This preserves the exact loan and ensures availability is unaffected. The automated test compares availability before and after transfer.
+
+## 11. User Experience Design
+
+The operator interface prioritizes scanning and repeated desk actions. The dashboard provides clickable KPI cards, a room-pulse availability section, quick actions, recent activity, and a refresh control. The operator can administer returns and transfers from the borrowing table.
+
+The student interface intentionally excludes operator-only controls. It presents equipment cards, date-aware availability, a request form, deposit and fee information, and the selected student's borrowing history. Both experiences are responsive and include retry, validation, empty, and success states.
+
+## 12. Validation and Error Handling
+
+The API handles invalid IDs, missing fields, malformed dates, backwards date ranges, missing borrowers, missing equipment, unavailable units, overlapping bookings, borrowing-limit violations, invalid transfers, duplicate returns, and database uniqueness errors. HTTP status codes distinguish successful creation, not-found records, invalid requests, and server errors.
+
+## 13. Test Evidence
+
+The backend acceptance suite is run with `npm test` while the API is available. It currently verifies five workflows:
+
+1. API health and seeded equipment
+2. Borrower creation and date-range availability
+3. Three-loan limit and fourth-loan rejection
+4. Late return, refund floor, outstanding balance, and duplicate-return rejection
+5. Active-loan transfer with preserved unit, due date, status, and availability
+
+The frontend is validated with `npm run build` and editor diagnostics on the touched source files.
+
+## 14. Trade-offs and Future Improvements
+
+The MVP does not implement secure authentication, payment processing, outbound reminders, equipment maintenance, or an audit trail. These are deliberate boundaries rather than hidden assumptions. The next highest-value improvements are:
+
+- Real authentication with operator/student permissions
+- Mapping authenticated students to one borrower record
+- Transfer and return audit history
+- Email or in-app overdue reminders
+- Approval and cancellation workflows for student requests
+- Equipment damage and maintenance records
+- Reports and CSV export
+- Configurable policy settings and multi-room support
+- PostgreSQL or another managed database for multi-user production deployment
