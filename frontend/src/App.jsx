@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   Activity,
-  ArrowLeft,
   ArrowRight,
   Box,
   CalendarDays,
@@ -102,14 +101,6 @@ function App() {
     setNotice(null);
     window.history.pushState({ avRoom: true, page: next }, "", `#${next}`);
   };
-  const goBack = () => {
-    if (page === "dashboard") return;
-    if (window.history.state?.avRoom && window.history.length > 1) {
-      window.history.back();
-    } else {
-      navigate("dashboard");
-    }
-  };
   const signOut = () => {
     localStorage.setItem("av-room-session", "signed-out");
     setSignedIn(false);
@@ -198,9 +189,6 @@ function App() {
           >
             <Menu size={21} />
           </button>
-          <button className="back-button" onClick={goBack} disabled={page === "dashboard"} aria-label="Go back" title="Go back">
-            <ArrowLeft size={18} />
-          </button>
           <div className="breadcrumb">
             <span>AV ROOM</span>
             <span className="breadcrumb-divider">/</span>
@@ -233,7 +221,9 @@ function App() {
           {page === "dashboard" && (
             <Dashboard
               data={dashboard}
+              equipment={equipment}
               navigate={navigate}
+              refresh={refresh}
               loading={loading}
               error={loadError}
               retry={refresh}
@@ -410,7 +400,7 @@ function PageHeader({ eyebrow, title, description, action }) {
     </div>
   );
 }
-function Dashboard({ data, navigate, loading, error, retry }) {
+function Dashboard({ data, equipment, navigate, refresh, loading, error, retry }) {
   if (loading && !data) return <Loading />;
   if (error && !data) return <DataError message={error} retry={retry} />;
   const stats = [
@@ -441,14 +431,15 @@ function Dashboard({ data, navigate, loading, error, retry }) {
         title="Good morning, operator"
         description="Here’s what’s happening in the AV room today."
         action={
-          <button className="button primary" onClick={() => navigate("borrow")}>
-            <Plus size={17} /> New borrowing
-          </button>
+          <div className="dashboard-actions">
+            <button className="button secondary" onClick={refresh} disabled={loading}><RotateCcw size={16} /> Refresh</button>
+            <button className="button primary" onClick={() => navigate("borrow")}><Plus size={17} /> New borrowing</button>
+          </div>
         }
       />
       <section className="stats-grid">
-        {stats.map(({ label, value, icon: Icon, tone }) => (
-          <div className="stat-card" key={label}>
+        {stats.map(({ label, value, icon: Icon, tone }, index) => (
+          <button className="stat-card" key={label} onClick={() => navigate(index === 0 ? "equipment" : index === 1 ? "availability" : "borrowings")}>
             <div className={`stat-icon ${tone}`}>
               <Icon size={19} />
             </div>
@@ -456,8 +447,16 @@ function Dashboard({ data, navigate, loading, error, retry }) {
               <span>{label}</span>
               <strong>{value}</strong>
             </div>
-          </div>
+            <ArrowRight className="stat-arrow" size={16} />
+          </button>
         ))}
+      </section>
+      <section className="panel room-pulse">
+        <div className="panel-head">
+          <div><h2>Room pulse</h2><p>Live availability by equipment type</p></div>
+          <button className="text-button" onClick={() => navigate("equipment")}>Open inventory <ArrowRight size={15} /></button>
+        </div>
+        <div className="pulse-grid">{equipment.map((item) => { const percent = item.total_units ? Math.round((item.available_units / item.total_units) * 100) : 0; return <button className="pulse-item" key={item.id} onClick={() => navigate("availability")}><div className="pulse-heading"><span>{item.name}</span><strong>{item.available_units}/{item.total_units}</strong></div><div className="pulse-track"><span style={{ width: `${percent}%` }} /></div><small>{percent === 100 ? "All units ready" : `${item.total_units - item.available_units} currently out`}</small></button>; })}</div>
       </section>
       <div className="dashboard-grid">
         <section className="panel activity-panel">
