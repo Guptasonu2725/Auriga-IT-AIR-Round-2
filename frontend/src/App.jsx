@@ -190,8 +190,6 @@ function App() {
             <Menu size={21} />
           </button>
           <div className="breadcrumb">
-            <span>AV ROOM</span>
-            <span className="breadcrumb-divider">/</span>
             <strong>{navItems.find((item) => item.id === page)?.label}</strong>
           </div>
           <button className="topbar-user" onClick={() => navigate("profile")} aria-label="Open my profile">
